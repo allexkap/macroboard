@@ -11,10 +11,7 @@ def write(line):
 
 def press(line, dt=None):
     join(line, 0x81)
-    if dt:
-        delay(dt)
-        release(line)
-
+    
 def release(line):
     join(line, 0x82)
 
@@ -29,3 +26,16 @@ def delay(dt):
 
 def load(tty=None):
     pass
+
+
+
+import serial
+from time import sleep
+
+
+data = bytes(ord(i) for i in '\x91serial\x92wow!\n\x94')
+
+with serial.Serial('/dev/ttyACM0', 115200) as box:
+    box.write(data)
+    while True:
+        print(*(chr(ch) for ch in box.read()), end='')
