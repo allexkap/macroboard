@@ -1,8 +1,13 @@
 #define DEFAULT_DELAY 50
+#define DEBOUNCE_DELAY 200
 #define ERROR_DELAY 500
 
 #define LCD_ADDRESS 0x27
 #define SD_CS_PIN 10
+
+#define BUTTON_OK_PIN 7
+#define BUTTON_UP_PIN 8
+#define BUTTON_DOWN_PIN 9
 
 #define MAX_FILENAME_LENGTH 8
 
@@ -46,12 +51,14 @@ LiquidCrystal_I2C lcd(0x27, 16, 4);
 volatile bool execute;
 uint8_t maxFileNumber = 0, displayPage = 0, fileNumber = 0;
 
+uint64_t lastDebounceTime;
+
 
 
 void setup() {
     Serial.begin(115200);
 
-    if (!SD.begin(SD_CS_PIN)) panic(1);
+    if (!SD.begin(SD_CS_PIN)) panic();
     root = SD.open("/");                // кто закроет тот здохнет
     maxFileNumber = rerollToFile(-1);
 
@@ -61,35 +68,36 @@ void setup() {
     lcd.init();
     lcd.backlight();
     updateDisplay(true);
+
+    pinMode(BUTTON_OK_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
 }
 
 
-// test
 void loop() {
-    if (Serial.available()) {
-        switch (Serial.read()) {
-            case '-':
-                if (!fileNumber--) fileNumber += maxFileNumber;
-                updateDisplay(false);
-                break;
-            case '=':
-                if (++fileNumber == maxFileNumber) fileNumber = 0;
-                updateDisplay(false);
-                break;
-            case '+':
-                fromSerialToFile();
-                maxFileNumber = rerollToFile(-1);
-                updateDisplay(true);
-                break;
-            case '~':
-                delay(1000);
-                rerollToFile(fileNumber);
-                file = root.openNextFile();
-                execCurrentFile();
-                file.close();
-                break;
+    if (millis() - lastDebounceTime > DEBOUNCE_DELAY) {
+        if (!digitalRead(BUTTON_OK_PIN)) {
+            rerollToFile(fileNumber);
+            file = root.openNextFile();
+            execCurrentFile();
+            file.close();
+        } else if (!digitalRead(BUTTON_DOWN_PIN)) {
+            if (++fileNumber == maxFileNumber) fileNumber = 0;
+            updateDisplay(false);
+        } else if (!digitalRead(BUTTON_UP_PIN)) {
+            if (!fileNumber--) fileNumber += maxFileNumber;
+            updateDisplay(false);
+        } else {
+            goto nothing;
         }
-        Serial.println(fileNumber);
+        lastDebounceTime = millis();
+    }
+    nothing:
+    if (Serial.available()) {
+        fromSerialToFile();
+        maxFileNumber = rerollToFile(-1);
+        updateDisplay(true);
     }
 }
 
@@ -137,7 +145,7 @@ void fromSerialToFile() {
         if (ch < IDLE) {
             switch (state) {
                 case NAME:
-                    if (pos == MAX_FILENAME_LENGTH) panic(2);
+                    if (pos == MAX_FILENAME_LENGTH) pos = 0;
                     name[pos++] = ch;
                     break;
                 case DATA:
@@ -162,7 +170,6 @@ void fromSerialToFile() {
     if (file) {
         file.close();
         SD.remove(name);
-        panic(3);
     }
 }
 
@@ -208,14 +215,11 @@ void execCurrentFile() {
 }
 
 
-void panic(uint8_t e) {
+void panic() {
     DDRB |= 1;
     PORTB &= ~1;
     while (1) {
-        for (int i = 0; i < 2*e; ++i) {
-            PORTB ^= 1;
-            delay(ERROR_DELAY);
-        }
-        delay(3*ERROR_DELAY);
+        PORTB ^= 1;
+        delay(ERROR_DELAY);
     }
 }
