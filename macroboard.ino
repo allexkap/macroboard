@@ -37,9 +37,8 @@ enum states {
     IDLE = 0x90,
     NAME,
     DATA,
-    ECHO,   // not implemented yet
     DONE,
-    DEL,    // not implemented yet
+    DEL,
 };
 
 
@@ -90,14 +89,15 @@ void loop() {
             if (!fileNumber--) fileNumber += maxFileNumber;
             updateDisplay(false);
         } else {
-            goto noclick;
+            goto nodebounce;
         }
         lastDebounceTime = millis();
     }
-    noclick:
+    nodebounce:
     if (Serial.available()) {
         parseSerial();
         maxFileNumber = rerollToFile(-1);
+        if (fileNumber == maxFileNumber) --fileNumber;
         updateDisplay(true);
     }
 }
@@ -105,6 +105,12 @@ void loop() {
 
 
 void updateDisplay(bool hard) {
+    if (!maxFileNumber) {
+        lcd.clear();
+        lcd.print("Upload file first");
+        fileNumber = 0;
+        return;
+    }
     if (fileNumber / 8 != displayPage || hard) {
         lcd.clear();
         displayPage = fileNumber / 8;
@@ -147,7 +153,7 @@ void parseSerial() {
         if (ch < IDLE) {
             switch (state) {
                 case NAME:
-                    if (pos == MAX_FILENAME_LENGTH) pos = 0;
+                    if (ch == '/' || pos == MAX_FILENAME_LENGTH) goto parse_error;
                     name[pos++] = ch;
                     break;
                 case DATA:
@@ -155,20 +161,30 @@ void parseSerial() {
                     break;
             }
         } else {
-            state = ch;
-            switch (state) {
+            if (state == IDLE && ch == DEL) {
+                if (!maxFileNumber) goto parse_error;
+                rerollToFile(fileNumber);
+                file = root.openNextFile();
+                while (name[pos] = file.name()[pos]) ++pos;
+            }
+            if (ch-state-1) goto parse_error;
+            switch (state = ch) {
                 case DATA:
                     name[pos] = '\0';
                     if (SD.exists(name)) SD.remove(name);
                     file = SD.open(name, FILE_WRITE);
+                    if (!file) goto parse_error;
                     break;
                 case DONE:
                     file.close();
-                    break;
+                    Serial.println("OK");
+                    return;
             }
         }
     }
 
+    parse_error:
+    Serial.println("FAIL");
     if (file) {
         file.close();
         SD.remove(name);
@@ -176,7 +192,6 @@ void parseSerial() {
 }
 
 
-// mb rework
 void executeCurrentFile() {
 
     uint8_t ch, modifier = NOTHING;
