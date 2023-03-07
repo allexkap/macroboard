@@ -45,7 +45,7 @@ enum states {
 
 
 File root, file;
-LiquidCrystal_I2C lcd(0x27, 16, 4);
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 
 volatile bool execute;
@@ -72,6 +72,7 @@ void setup() {
     pinMode(BUTTON_OK_PIN, INPUT_PULLUP);
     pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
     pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
+    attachInterrupt(4, stopExecute, FALLING);
 }
 
 
@@ -80,7 +81,7 @@ void loop() {
         if (!digitalRead(BUTTON_OK_PIN)) {
             rerollToFile(fileNumber);
             file = root.openNextFile();
-            execCurrentFile();
+            executeCurrentFile();
             file.close();
         } else if (!digitalRead(BUTTON_DOWN_PIN)) {
             if (++fileNumber == maxFileNumber) fileNumber = 0;
@@ -89,13 +90,13 @@ void loop() {
             if (!fileNumber--) fileNumber += maxFileNumber;
             updateDisplay(false);
         } else {
-            goto nothing;
+            goto noclick;
         }
         lastDebounceTime = millis();
     }
-    nothing:
+    noclick:
     if (Serial.available()) {
-        fromSerialToFile();
+        parseSerial();
         maxFileNumber = rerollToFile(-1);
         updateDisplay(true);
     }
@@ -104,21 +105,22 @@ void loop() {
 
 
 void updateDisplay(bool hard) {
-    if (fileNumber / 4 != displayPage || hard) {
+    if (fileNumber / 8 != displayPage || hard) {
         lcd.clear();
-        displayPage = fileNumber / 4;
-        rerollToFile(displayPage * 4);
-        for (uint8_t i = 0; i < 4; ++i) {
+        displayPage = fileNumber / 8;
+        rerollToFile(displayPage * 8);
+        
+        for (uint8_t i = 0; i < 8; ++i) {
             file = root.openNextFile();
             if (!file) break;
-            lcd.setCursor(1, i);
+            lcd.setCursor(1+i/4*10, i%4);
             lcd.print(file.name());
             file.close();
         }
     }
-    for (uint8_t i = 0, j = fileNumber%4; i < 4; ++i) {
-        lcd.setCursor(0, i);
-        if (i != j) lcd.print(' ');
+    for (uint8_t i = 0; i < 8; ++i) {
+        lcd.setCursor(i/4*10, i%4);
+        if (i != fileNumber%8) lcd.print(' ');
         else lcd.print('*');
     }
 }
@@ -135,7 +137,7 @@ uint8_t rerollToFile(uint8_t number) {
 }
 
 
-void fromSerialToFile() {
+void parseSerial() {
 
     uint8_t name[MAX_FILENAME_LENGTH], pos = 0;
     uint8_t ch, state = IDLE;
@@ -153,7 +155,8 @@ void fromSerialToFile() {
                     break;
             }
         } else {
-            switch (ch) {
+            state = ch;
+            switch (state) {
                 case DATA:
                     name[pos] = '\0';
                     if (SD.exists(name)) SD.remove(name);
@@ -163,7 +166,6 @@ void fromSerialToFile() {
                     file.close();
                     break;
             }
-            state = ch;
         }
     }
 
@@ -175,9 +177,10 @@ void fromSerialToFile() {
 
 
 // mb rework
-void execCurrentFile() {
+void executeCurrentFile() {
 
     uint8_t ch, modifier = NOTHING;
+    lastDebounceTime = millis();
     execute = true;
 
     while (file.available() && execute) {
@@ -212,6 +215,11 @@ void execCurrentFile() {
                 break;
         }
     }
+}
+
+
+void stopExecute() {
+    if (millis() - lastDebounceTime > DEBOUNCE_DELAY) execute = false;
 }
 
 
