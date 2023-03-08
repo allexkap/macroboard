@@ -155,16 +155,14 @@ void parseSerial() {
         switch (state) {
             case IDLE:
                 if (ch == NAME) {
-                    state = ch;
-                    break;
+                    state = NAME;
                 }
-                if (ch == OPEN) {
+                else if (ch == OPEN) {
                     state = DATA;
                     if (!maxFileNumber) break;
                     rerollToFile(fileNumber);
                     file = root.openNextFile();
                     while (name[pos] = file.name()[pos]) ++pos;
-                    break;
                 }
                 break;
 
@@ -173,15 +171,15 @@ void parseSerial() {
                     name[pos] = '\0';
                     if (SD.exists(name)) SD.remove(name);
                     file = SD.open(name, FILE_WRITE);
-                    if (file) state = ch;
+                    if (file) state = DATA;
                     else state = ERROR;
-                    break;
                 }
-                if (ch == '/' || pos == MAX_FILENAME_LENGTH) {
+                else if (ch == '/' || pos == MAX_FILENAME_LENGTH) {
                     state = ERROR;
-                    break;
                 }
-                name[pos++] = ch;
+                else {
+                    name[pos++] = ch;
+                }
                 break;
 
             case DATA:
@@ -189,9 +187,10 @@ void parseSerial() {
                     state = IDLE;
                     file.close();
                     Serial.println("OK");
-                    break;
                 }
-                file.write(ch);
+                else {
+                    file.write(ch);
+                }
                 break;
         }
     }
