@@ -39,7 +39,7 @@ enum states {
     NAME,
     DATA,
     DONE,
-    DEL,
+    OPEN,
 };
 
 
@@ -158,8 +158,8 @@ void parseSerial() {
                     state = ch;
                     break;
                 }
-                if (ch == DEL) {
-                    state = ERROR;
+                if (ch == OPEN) {
+                    state = DATA;
                     if (!maxFileNumber) break;
                     rerollToFile(fileNumber);
                     file = root.openNextFile();
