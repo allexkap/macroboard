@@ -1,4 +1,5 @@
 from serial import Serial
+import os
 from keys import *
 
 
@@ -19,13 +20,13 @@ states = {
 }
 
 
-def _load(data, tty='/dev/ttyACM0'):
-    with Serial(tty, 115200, timeout=0.1) as box:
+def _load(data, args):
+    with Serial(args.port, 115200, timeout=0.1) as box:
         box.write(data)
         echo = bytes()
         while not echo:
             echo = box.readall()
-        print(echo.decode())
+        print(echo.decode()) # todo
 
 def _createFile(filename):
     data = bytearray()
@@ -65,23 +66,41 @@ def delay(time):
         actions.append(min(time, 255))   # fix
         time -= 255
 
-def save(filename='default', *args, **kwargs):
-    data = _createFile(filename)
-    _load(data, *args, **kwargs)
 
-def remove(filename=None, *args, **kwargs):
-    if filename:
-        data = _createFile(filename)
-        data.pop()
+def _save(args):
+    data = _createFile(args.name)
+    _load(data, args)
+
+def _remove(args):
+    if args.name:
+        data = _createFile(args.name)
+        data[-1] = states['IDLE']
     else:
-        data = bytes((states['OPEN'],))
-    _load(data, *args, **kwargs)
+        data = bytes((states['OPEN'], states['IDLE']))
+    _load(data, args)
+
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description='Macros loader into board')
+    parser.add_argument('path', nargs='?', help='path to file with macros')
+    parser.add_argument('-r', '--remove', help='remove macros by name', action='store_true')
+    parser.add_argument('-n', '--name', help='macros name', default='default')
+    parser.add_argument('-t', '--port', help='board port', default='/dev/ttyACM0')
+    return parser.parse_args()
 
 
 
 actions = bytearray()
 
 if __name__ == '__main__':
-    write('macroboard')
-    releaseAll()
-    save()
+    args = parse_args()
+
+    if args.remove:
+        if args.path:
+            print('Ignore path')
+        _remove(args)
+    else:
+        with open(os.path.abspath(args.path)) as file:
+            exec(file.read())
+        _save(args)
